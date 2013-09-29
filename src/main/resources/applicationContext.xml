@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:context="http://www.springframework.org/schema/context" xmlns:jdbc="http://www.springframework.org/schema/jdbc" 
+	xmlns:tx="http://www.springframework.org/schema/tx"	xmlns:aop="http://www.springframework.org/schema/aop" 
+	xsi:schemaLocation="
+         http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.1.xsd
+         http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-3.1.xsd
+         http://www.springframework.org/schema/jdbc http://www.springframework.org/schema/jdbc/spring-jdbc-3.1.xsd
+         http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx-3.1.xsd
+         http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
+			
+	<!-- Creacion del servidor que lo vamos a inicializar en un Socket para mantenerlo a la escucha de las peticiones -->
+    <bean id="h2Server" class="org.h2.tools.Server" scope="singleton" factory-method="createTcpServer" init-method="start" destroy-method="stop">
+    	<constructor-arg value="-tcp,-tcpAllowOthers,-tcpPort,9092" />
+    </bean>
+	
+	<!-- Definicion del DataSource que nos va a permitir el acceso a la base de datos a traves de un Pool de conexiones -->    
+    <bean id="dataSource" class="org.springframework.jdbc.datasource.DriverManagerDataSource" depends-on="h2Server">
+	    <property name="driverClassName" value="org.h2.Driver" />
+	    <property name="url" value="jdbc:h2:tcp://localhost:9092/C:/database/dbTest;MODE=Oracle;DB_CLOSE_DELAY=-1;" />
+	    <property name="username" value="sa" />
+	    <property name="password" value="" />
+    </bean>
+    
+     <!-- Definicion de NamedParameterJdbcTemplate (para hacer las consultas con NamedParameters -->
+    <bean id="namedParameterJdbcTemplate" class="org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate">
+        <constructor-arg ref="dataSource" />
+    </bean>
+    
+    <!-- Definicion del Gestor de las Transacciones -->
+    <bean id="transactionManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+        <property name="dataSource" ref="dataSource" />
+    </bean>    
+    
+    <!-- Bean para ejecutar el Script de Inicio al arrancar la Base de Datos -->
+    <bean class="es.gestion.comercial.modelo.StartDatabase" init-method="initDatabase">
+    	<constructor-arg name="scriptInicio" value="classpath:scriptInicio.sql" />
+    	<constructor-arg name="namedParameterJdbcTemplate" ref="namedParameterJdbcTemplate" />
+    </bean>
+    
+    <!-- Definicion de los DAO de la aplicacion -->
+    <!-- Definicion del Abstract DAO del cual deberan extender todos los DAO's de la aplicacion -->
+    <bean id="abstractDAO" class="es.gestion.comercial.modelo.impl.AbstractBaseDAO" abstract="true">
+        <property name="namedParameterJdbcTemplate" ref="namedParameterJdbcTemplate" />
+    </bean>
+    
+    <!-- Definicion de PersonaDAO -->
+    <bean id="personaDAO" class="es.gestion.comercial.modelo.impl.PersonaDAOImpl" parent="abstractDAO" />    
+    
+    <!-- Definicion de los BO de la aplicacion -->
+    <!-- Definicion del Proxy para gestionar las Transacciones. Todos los BO deberan extender de el. -->
+    <bean id="parentBOProxy" class="org.springframework.transaction.interceptor.TransactionProxyFactoryBean" abstract="true">
+        <property name="transactionManager" ref="transactionManager" />
+        <property name="transactionAttributes">
+            <props>
+                <prop key="*">PROPAGATION_REQUIRED, -AplicacionException</prop>
+            </props>
+        </property>
+    </bean>
+    
+    <!-- Definicion de PersonaBO -->
+    <bean id="personaBO" parent="parentBOProxy">
+        <property name="proxyInterfaces" value="es.gestion.comercial.controlador.interfaz.PersonaBO" />
+        <property name="target">
+            <bean class="es.gestion.comercial.controlador.impl.PersonaBOImpl">
+		    	<property name="personaDAO" ref="personaDAO" />
+		    </bean>
+        </property>
+    </bean>
+    
+    
+</beans>
